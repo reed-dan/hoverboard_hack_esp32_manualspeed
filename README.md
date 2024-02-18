@@ -1,4 +1,7 @@
 # Hoverboard Hack ESP32 Manual Speed
+
+!Currently not working!
+
 ESP32 script to control hacked hoverboard
 
 ## Can control
