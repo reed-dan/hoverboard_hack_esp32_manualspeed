@@ -2,9 +2,11 @@
 ESP32 script to control hacked hoverboard
 
 Can control
-https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
-or
-https://github.com/AILIFE4798/Hoverboard-Firmware-Hack-Gen2.x-MM32
+
+* https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
+* https://github.com/AILIFE4798/Hoverboard-Firmware-Hack-Gen2.x-MM32
+
+Based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree/main/Arduino%20Examples/TestSpeed
 
 Current Control Methods
   Serial
