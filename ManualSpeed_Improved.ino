@@ -41,7 +41,8 @@ int motors_left[motor_count_left] = {1, 3, 5};
 int motor_speed[motor_count_total];
 //array for istate
 int slave_state[motor_count_total];
-
+//offset
+int motoroffset = motors_all[0] - 0;
 
 
 
@@ -149,9 +150,9 @@ void loop()
             while (count < motor_count_right)
             {
               //set motor speed
-              motor_speed[motors_right[count]] = ispeedin;
+              motor_speed[motors_right[count-motor]-motoroffset] = ispeedin;
              //set motor/mcu state
-            slave_state[count] = istatein;                
+            slave_state[motors_right[count-motor]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
@@ -174,13 +175,12 @@ void loop()
           {
             //set the data
             count = 0;
-            Serial.println(motor_count_left);
             while (count < motor_count_left)
             {
               //set motor speed
-              motor_speed[motors_left[count]] = ispeedin;
+              motor_speed[motors_left[count-motor]-motoroffset] = ispeedin;
              //set motor/mcu state
-            slave_state[count] = istatein;                
+            slave_state[motors_left[count-motor]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
@@ -197,9 +197,9 @@ void loop()
   
             if (numParsed == 3) {
             //set motor speed
-            motor_speed[slaveidin] = ispeedin; 
+            motor_speed[slaveidin-motoroffset] = ispeedin; 
              //set motor/mcu state
-            slave_state[slaveidin] = istatein; 
+            slave_state[slaveidin-motoroffset] = istatein; 
             } 
             else {
             // Handle parsing error
