@@ -30,12 +30,15 @@
 //array for motors
 //how many motors do you have
 const size_t motor_count_total = 6;
-int motors_all[motor_count_total];
+//identify the motors by their slave number
+int motors_all[motor_count_total] = {1, 2, 3, 4, 5, 6};
 //how many right motors
 const size_t motor_count_right = 3;
+//identify the motors by their slave number
 int motors_right[motor_count_right] = {0, 2, 4};
 //how many left motors
 const size_t motor_count_left = 3;
+//identify the motors by their slave number
 int motors_left[motor_count_left] = {1, 3, 5};
 //array for speed
 int motor_speed[motor_count_total];
@@ -231,7 +234,7 @@ int i = 0;
   while (i < motor_count_total)
   {
     Serial.print("Motor ");
-    Serial.print(i);
+    Serial.print(motors_all[i]);
     Serial.print(" Speed is set to ");
     Serial.print(motor_speed[i]);
     Serial.print(" Slave state is set to ");
@@ -275,10 +278,10 @@ int i = 0;
     #ifdef REMOTE_UARTBUS
       count = 0;
       while (count < motor_count_total){
-         HoverSend(oSerialHover,count,motor_speed[count],slave_state[count]);
+         HoverSend(oSerialHover,motors_all[count],motor_speed[count],slave_state[count]);
 //           #ifdef _DEBUG
 //                Serial.print("Sent Motor ");
-//                Serial.print(count);
+//                Serial.print(motors_all[count]);
 //                Serial.print(" Speed ");
 //                Serial.print(motor_speed[count]);
 //                Serial.print (" and Slave State ");
