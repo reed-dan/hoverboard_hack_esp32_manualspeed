@@ -150,9 +150,9 @@ void loop()
             while (count < motor_count_right)
             {
               //set motor speed
-              motor_speed[motors_right[count-motor]-motoroffset] = ispeedin;
+              motor_speed[motors_right[count]-motoroffset] = ispeedin;
              //set motor/mcu state
-            slave_state[motors_right[count-motor]-motoroffset] = istatein;                
+            slave_state[motors_right[count]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
@@ -178,9 +178,9 @@ void loop()
             while (count < motor_count_left)
             {
               //set motor speed
-              motor_speed[motors_left[count-motor]-motoroffset] = ispeedin;
+              motor_speed[motors_left[count]-motoroffset] = ispeedin;
              //set motor/mcu state
-            slave_state[motors_left[count-motor]-motoroffset] = istatein;                
+            slave_state[motors_left[count]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
