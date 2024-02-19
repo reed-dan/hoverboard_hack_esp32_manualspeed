@@ -100,12 +100,12 @@ void loop()
 // check if input starts with hover
 //if the hover command is present parse the input data
     if (command.substring(0,6) == "hover|") {
-      Serial.println("Command hover parse the data");
-      Serial.println(command);
+      //Serial.println("Command hover parse the data");
+      //Serial.println(command);
       //remove the command
       //start at 0 remove 6 char for hover|
       command.remove(0,6);
-      Serial.println(command);
+      //Serial.println(command);
 
         if (command.substring(0,4) == "all|") //all
         {
