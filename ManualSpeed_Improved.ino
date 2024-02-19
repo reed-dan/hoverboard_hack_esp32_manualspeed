@@ -276,14 +276,14 @@ int i = 0;
       count = 0;
       while (count < motor_count_total){
          HoverSend(oSerialHover,count,motor_speed[count],slave_state[count]);
-           #ifdef _DEBUG
-                Serial.print("Sent Motor ");
-                Serial.print(count);
-                Serial.print(" Speed ");
-                Serial.print(motor_speed[count]);
-                Serial.print (" and Slave State ");
-                Serial.println(slave_state[count]);
-            #endif
+//           #ifdef _DEBUG
+//                Serial.print("Sent Motor ");
+//                Serial.print(count);
+//                Serial.print(" Speed ");
+//                Serial.print(motor_speed[count]);
+//                Serial.print (" and Slave State ");
+//                Serial.println(slave_state[count]);
+//            #endif
                    count ++;  
       }
 
