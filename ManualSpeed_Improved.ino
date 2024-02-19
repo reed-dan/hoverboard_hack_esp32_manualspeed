@@ -24,9 +24,6 @@
 //MQTT
 
 
-
-//does your slaveid start with 0 or 1?
-// not programmed yet some kind of offset? const size_t first_slaveid = 1; 
 //array for motors
 //how many motors do you have
 const size_t motor_count_total = 6;
