@@ -20,7 +20,7 @@
 //rc receiver (PPM)
 //servo (PWM)
 //WiFi?
-#define input_ADC //potentiometer/twisth throthle (ADC)
+//#define input_ADC //potentiometer/twisth throthle (ADC)
 //MQTT
 
 
@@ -81,6 +81,7 @@ void setup()
 #ifdef input_ADC
   int min_speed  = -1000;
   int max_speed = 1000;
+  //set both pins the same if you only have 1 adc
   int adc_input_pin_right = 36;
   int adc_input_pin_left = 37;
   #endif
