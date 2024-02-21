@@ -12,6 +12,8 @@ Based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree
 
 ## Current Control Methods
   * Serial
+  * ADC 2024/02/20
+     * Potentiometer right & left
 
 ## Future Control Methods
 ### The possibilities are endless
@@ -19,7 +21,6 @@ Based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree
 * rc receiver (PPM)
 * servo (PWM)
 * WiFi?
-* potentiometer/twisth throthle (ADC)
 * MQTT
 
 ## Current Inputs/Commands
