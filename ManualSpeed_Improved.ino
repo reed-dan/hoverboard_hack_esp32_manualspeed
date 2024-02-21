@@ -1,7 +1,7 @@
 //Hoverboard Manual Speed
 //designed for esp32
 //based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree/main/Arduino%20Examples/TestSpeed
-//version 0.20240218
+//version 0.20240220 //added adc potentiometer support
 
 
 #define _DEBUG      // debug output to first hardware serial port
@@ -20,7 +20,7 @@
 //rc receiver (PPM)
 //servo (PWM)
 //WiFi?
-//potentiometer/twisth throthle (ADC)
+#define input_ADC //potentiometer/twisth throthle (ADC)
 //MQTT
 
 
@@ -60,6 +60,11 @@ String command;
 
 SerialHover2Server oHoverFeedback;
 
+//float for adc input
+float floatMap(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
 void setup()
 {
   #ifdef _DEBUG
@@ -72,6 +77,13 @@ void setup()
  HoverSetupEsp32(oSerialHover,19200,16,17);
  #else
  #endif
+
+#ifdef input_ADC
+  int min_speed  = -1000;
+  int max_speed = 1000;
+  int adc_input_pin_right = 36;
+  int adc_input_pin_left = 37;
+  #endif
 }
 
 
@@ -244,6 +256,54 @@ int i = 0;
 
 #endif
 
+#ifdef input_adc
+    // read the input on analog pin:
+  int analogValueRight = analogRead(adc_input_pin_right);
+  int analogValueLeft = analogRead(adc_input_pin_left);
+  // Rescale to potentiometer's
+  float adcspeedinright = floatMap(analogValueRight 0, 4095, min_speed, max_speed);
+  float adcspeedinleft = floatMap(analogValueLeft 0, 4095, min_speed, max_speed);
+  
+  #ifdef _DEBUG
+    // print out the value you read:
+    Serial.print("Analog Right: ");
+    Serial.print(analogValueRight);
+    Serial.print(", Speed: ");
+    Serial.println(adcspeedinright);
+    delay(1000);
+    Serial.print("Analog Left: ");
+    Serial.print(analogValueLeft);
+    Serial.print(", Speed: ");
+    Serial.println(adcspeedinleft);
+    delay(1000);
+  #endif
+//set the values
+
+   //right
+            count = 0;
+            while (count < motor_count_right)
+            {
+              //set motor speed
+              motor_speed[motors_right[count]-motoroffset] = ispeedin;
+             //set motor/mcu state
+            slave_state[motors_right[count]-motoroffset] = istatein;                
+              //increase count
+              count++;
+            } 
+  //left
+            count = 0;
+            while (count < motor_count_left)
+            {
+              //set motor speed
+              motor_speed[motors_left[count]-motoroffset] = ispeedin;
+             //set motor/mcu state
+            slave_state[motors_left[count]-motoroffset] = istatein;                
+              //increase count
+              count++;
+            } 
+  
+  #endif
+  
 
   int iSteer =0;   // repeats from +100 to -100 to +100 :-)
   //int iSteer = 0;
