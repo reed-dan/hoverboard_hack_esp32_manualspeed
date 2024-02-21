@@ -262,8 +262,19 @@ int i = 0;
   int analogValueRight = analogRead(adc_input_pin_right);
   int analogValueLeft = analogRead(adc_input_pin_left);
   // Rescale to potentiometer's
+  if analogValueRight >= ((4095/2)-50) && <= ((4095/2)+50))) {//make it easier to get to 0
+    float adcspeedinright = 0;
+  }
+  else{
   float adcspeedinright = floatMap(analogValueRight 0, 4095, min_speed, max_speed);
+  }
+    if analogValueLeft >= ((4095/2)-50) && <= ((4095/2)+50))) {//make it easier to get to 0
+    float adcspeedinleft = 0;
+  }
+  else{
   float adcspeedinleft = floatMap(analogValueLeft 0, 4095, min_speed, max_speed);
+  }
+
   
   #ifdef _DEBUG
     // print out the value you read:
