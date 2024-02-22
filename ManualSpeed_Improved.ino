@@ -60,10 +60,7 @@ String command;
 
 SerialHover2Server oHoverFeedback;
 
-//float for adc input
-float floatMap(float x, float in_min, float in_max, float out_min, float out_max) {
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
+
 
 void setup()
 {
@@ -262,20 +259,20 @@ int i = 0;
   int analogValueRight = analogRead(adc_input_pin_right);
   int analogValueLeft = analogRead(adc_input_pin_left);
   // Rescale to potentiometer's
-  int deadband = 100; //this the the rang in the middle that will output zero
-  if ((4095/2)-(deadband/2) < analogValueRight && analogValueRight < (4095/2)+(deadband/2)) {//make it easier to get to 0
+  int deadband = 100; //this the the range in the middle that will output zero
+  if (abs(analogValueRight-(4095/2))<deadband){//make it easier to get to 0
 //1997.5 < input < 2097.5
     float adcspeedinright = 0;
   }
   else{
-  float adcspeedinright = floatMap(analogValueRight 0, 4095, min_speed, max_speed);
+  float adcspeedinright = map(analogValueRight,0,4095,min_speed,max_speed);
   }
-    if (4095/2)-(deadband/2) < analogValueLeft && analogValueLeft < (4095/2)+(deadband/2) {//make it easier to get to 0
-      
+  if (abs(analogValueLeft-(4095/2))<deadband){//make it easier to get to 0
+//1997.5 < input < 2097.5
     float adcspeedinleft = 0;
   }
   else{
-  float adcspeedinleft = floatMap(analogValueLeft 0, 4095, min_speed, max_speed);
+  float adcspeedinright = map(analogValueLeft,0,4095,min_speed,max_speed);
   }
 
   
@@ -299,9 +296,9 @@ int i = 0;
             while (count < motor_count_right)
             {
               //set motor speed
-              motor_speed[motors_right[count]-motoroffset] = ispeedin;
+              motor_speed[motors_right[count]-motoroffset] = adcspeedinright;
              //set motor/mcu state
-            slave_state[motors_right[count]-motoroffset] = istatein;                
+            //slave_state[motors_right[count]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
@@ -310,9 +307,9 @@ int i = 0;
             while (count < motor_count_left)
             {
               //set motor speed
-              motor_speed[motors_left[count]-motoroffset] = ispeedin;
+              motor_speed[motors_left[count]-motoroffset] = adcspeedinleft;
              //set motor/mcu state
-            slave_state[motors_left[count]-motoroffset] = istatein;                
+            //slave_state[motors_left[count]-motoroffset] = istatein;                
               //increase count
               count++;
             } 
