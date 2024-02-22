@@ -81,6 +81,8 @@ void setup()
   //set both pins the same if you only have 1 adc
   int adc_input_pin_right = 36;
   int adc_input_pin_left = 37;
+   HoverSetupEsp32(oSerialHover,19200,16,17);
+
   #endif
 }
 
