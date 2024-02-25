@@ -1,3 +1,6 @@
+> [!WARNING]  
+> ADC is still a work in progress and is untested!
+
 # Hoverboard Hack ESP32 Manual Speed
 
 
@@ -12,7 +15,7 @@ Based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree
 
 ## Current Control Methods
   * Serial
-  * ADC 2024/02/20
+  * ADC 2024/02/20 (Untested)
      * Potentiometer right & left
 
 ## Future Control Methods
