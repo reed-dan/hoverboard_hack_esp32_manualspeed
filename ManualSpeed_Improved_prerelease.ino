@@ -5,7 +5,9 @@
 //Hoverboard Manual Speed
 //designed for esp32
 //based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree/main/Arduino%20Examples/TestSpeed
-//version 0.20240225 //added adc potentiometer support
+//version
+//0.20240302 //started adding wasd control
+//0.20240225 //added adc potentiometer support
 
 
 #define _DEBUG      // debug output to first hardware serial port
@@ -20,6 +22,7 @@
 //input method
 //serial
 #define input_serial
+#define input_serial_wasd
 //ble
 //rc receiver (PPM)
 //servo (PWM)
@@ -57,6 +60,11 @@ int ispeedin;
 int istatein;
 int count=0;
 String command;
+//serial wasd
+//speed steps
+int speedstep = 100;
+//speed difference for turn
+int speedstepturn = 50;
 
 
 
@@ -78,6 +86,12 @@ void setup()
  HoverSetupEsp32(oSerialHover,19200,16,17);
  #else
  #endif
+  
+#ifdef input_serial_wasd
+ HoverSetupEsp32(oSerialHover,19200,16,17);
+ #else
+ #endif
+  
 
 #ifdef input_ADC
   int min_speed  = -1000;
@@ -242,6 +256,98 @@ else {
       Serial.println(command);
   
     }
+
+//serial_WASD
+    #ifdef input_serial
+//read serial input
+  if (Serial.available()) { // if there is data comming
+    String command = Serial.readStringUntil('\n'); // read string until newline character
+// check if input starts with hover
+//if the hover command is present parse the input data
+
+
+        if (command == "w") //w
+        {
+          ispeedin = ispeedin + speedstep
+            while (count < motor_count_total)
+            {
+              //set motor speed
+            motor_speed[count] = ispeedin;
+             //set motor/mcu state
+            slave_state[count] = istatein;  
+              //increase count
+              count++;
+            } 
+          }
+          else
+          {
+
+          }
+
+        }
+        else if (command == "s") //w
+        {
+          ispeedin = ispeedin - speedstep
+            while (count < motor_count_total)
+            {
+              //set motor speed
+            motor_speed[count] = ispeedin;
+             //set motor/mcu state
+            slave_state[count] = istatein;  
+              //increase count
+              count++;
+            } 
+          }
+          else
+          {
+
+          }
+
+        }
+        else if (command == "d") //d
+        {
+          ispeedin = ispeedin - speedstepturn
+            while (count < motor_count_total)
+            {
+            //set the data
+            count = 0;
+            while (count < motor_count_right)
+            {
+              //set motor speed
+              motor_speed[motors_right[count]-motoroffset] = ispeedin;
+             //set motor/mcu state
+            slave_state[motors_right[count]-motoroffset] = istatein;                
+              //increase count
+              count++;
+            } 
+          }
+          else
+          {
+          }
+        }
+
+        else if (command == "a") //w
+        {
+          ispeedin = ispeedin - speedstepturn
+            //set the data
+            count = 0;
+            while (count < motor_count_left)
+            {
+              //set motor speed
+              motor_speed[motors_left[count]-motoroffset] = ispeedin;
+             //set motor/mcu state
+            slave_state[motors_left[count]-motoroffset] = istatein;                
+              //increase count
+              count++;
+            } 
+          }
+          else
+          {
+          }
+        }
+        
+
+    
   #ifdef _DEBUG
 int i = 0;
   while (i < motor_count_total)
