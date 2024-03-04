@@ -341,6 +341,38 @@ else {
               count++;
             } 
           }
+        else if (command == "e") //e
+                    sync motors to speed of right first motoe
+        {
+          ispeedin = motor_speed[motors_right[0]-motoroffset]
+            //set the data
+            count = 0;
+             while (count < motor_count_total)
+            {
+              //set motor speed
+            motor_speed[count] = ispeedin;
+             //set motor/mcu state
+            slave_state[count] = istatein;  
+              //increase count
+              count++;
+            } 
+          }
+        else if (command == "q") //q
+                    sync motors to speed of left first motoe
+        {
+          ispeedin = motor_speed[motors_left[0]-motoroffset]
+            //set the data
+            count = 0;
+             while (count < motor_count_total)
+            {
+              //set motor speed
+            motor_speed[count] = ispeedin;
+             //set motor/mcu state
+            slave_state[count] = istatein;  
+              //increase count
+              count++;
+            } 
+          }
           else
           {
           }
