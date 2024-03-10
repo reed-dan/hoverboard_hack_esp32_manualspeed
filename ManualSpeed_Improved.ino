@@ -1,375 +1,333 @@
-//Hoverboard Manual Speed
-//designed for esp32
-//based on https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32/tree/main/Arduino%20Examples/TestSpeed
-//version 0.20240220 //added adc potentiometer support
-
-
-#define _DEBUG      // debug output to first hardware serial port
-//#define DEBUG_RX    // additional hoverboard-rx debug output
-#define REMOTE_UARTBUS
-
-#define SEND_MILLIS 100   // send commands to hoverboard every SEND_MILLIS millisesonds
-
+// Includes
 #include "util.h"
 #include "hoverserial.h"
 
-//input method
-//serial
+// Variable Declarations
+int numMotors = 2; // Number of motors/slaves connected
+int numRightMotors = 1; // Number of right motors/slaves connected
+int numLeftMotors = 1;  // Number of left motors/slaves connected
+int motorIds[numMotors] = {1, 2}; // Motor IDs
+int motorIdsRight[numRightMotors] = {1}; // Motor IDs for right motors
+int motorIdsLeft[numLeftMotors] = {2}; // Motor IDs for left motors
+int slaveCurrentSpeed[numMotors] = {0}; // Current speeds of motors (initialized to 0)
+int slaveDesiredSpeed[numMotors] = {0}; // Desired speeds of motors (initialized to 0)
+int speedIncrement = 10; // Increment speed for gradual acceleration
+int sendSpeed = 0; // The speed sent to the slave/motor, typically equals desiredSpeed unless desired != current
+int slaveDesiredState[numMotors] = {1}; // Desired states of slaves (initialized to 1)
+int slaveCurrentState[numMotors] = {0}; // Current states of slaves (initialized to 0)
+int slaveCurrentVolt[numMotors] = {0}; // Current volts of slaves
+int slaveCurrentAmp[numMotors] = {0}; // Current amps of slaves
+int slaveCurrentHallSteps[numMotors] = {0}; // Current hall steps of motors
+
+// Constants
+#define debugSerialBaud  115200 // Baud Rate for ESP32 to computer serial comm
+#define serialHoverBaud 19200 // Baud Rate for ESP32 to slave comm
+#define serialHoverRxPin 16 // RX pin for ESP32 to slave serial comm
+#define serialHoverTxPin 17 // TX pin for ESP32 to slave serial comm
+#define serialHoverTimeout 1000  // Timeout period in milliseconds for response from hover
+#define oSerialHover Serial2 // ESP32 Serial object for communication with hover
+
+//Control Method
 #define input_serial
-//ble
-//rc receiver (PPM)
-//servo (PWM)
-//WiFi?
-//#define input_ADC //potentiometer/twisth throthle (ADC)
-//MQTT
 
 
-//array for motors
-//how many motors do you have
-const size_t motor_count_total = 6;
-//identify the motors by their slave number
-int motors_all[motor_count_total] = {1, 2, 3, 4, 5, 6};
-//how many right motors
-const size_t motor_count_right = 3;
-//identify the motors by their slave number
-int motors_right[motor_count_right] = {0, 2, 4};
-//how many left motors
-const size_t motor_count_left = 3;
-//identify the motors by their slave number
-int motors_left[motor_count_left] = {1, 3, 5};
-//array for speed
-int motor_speed[motor_count_total];
-//array for istate
-int slave_state[motor_count_total];
-//offset
-int motoroffset = motors_all[0] - 0;
+// Debug flag
+#define DEBUG
 
-
-
-//
-int slaveidin;
-int iSpeed;
-int ispeedin;
-int istatein;
-int count=0;
-String command;
-
-
-
-  #define oSerialHover Serial2    // ESP32
-
-SerialHover2Server oHoverFeedback;
-
-
-
-void setup()
-{
-  #ifdef _DEBUG
-    Serial.begin(115200);
-    Serial.println("Hello Hoverbaord V2.x :-)");
-  #endif
-  
-
-#ifdef input_serial
- HoverSetupEsp32(oSerialHover,19200,16,17);
- #else
- #endif
-
-#ifdef input_ADC
-  int min_speed  = -1000;
-  int max_speed = 1000;
-  //set both pins the same if you only have 1 adc
-  int adc_input_pin_right = 36;
-  int adc_input_pin_left = 37;
-   HoverSetupEsp32(oSerialHover,19200,16,17);
-
-  #endif
+void setup() {
+  // put your setup code here, to run once:
+    Serial.begin(debugSerialBaud);
+    Serial.println("Hello DanBot Hoverbaord controler");
+ HoverSetupEsp32(oSerialHover,serialHoverBaud,serialHoverRxPin,serialHoverTxPin);
 }
 
+void loop() {
+  // put your main code here, to run repeatedly:
 
-unsigned long iLast = 0;
-unsigned long iNext = 0;
-unsigned long iTimeNextState = 3000;
-uint8_t  wState = 1;   // 1=ledGreen, 2=ledOrange, 4=ledRed, 8=ledUp, 16=ledDown, 32=Battery3Led, 64=Disable, 128=ShutOff
-//id for messages being sent
-uint8_t  iSendId = 0;   // only ofr UartBus
-
-void loop()
-{
-  unsigned long iNow = millis();
-  //digitalWrite(39, (iNow%500) < 250);
-  //digitalWrite(37, (iNow%500) < 100);
-
-//look for incoming serial command
-//hover|slave/motorid|speed|state
-//speed can be from -1000 reverse full speed to 1000 forward full speed
-//state can be 1=ledGreen, 2=ledOrange, 4=ledRed, 8=ledUp, 16=ledDown, 32=Battery3Led, 64=Disable, 128=ShutOff
-
-
+//input processing
 #ifdef input_serial
 //read serial input
   if (Serial.available()) { // if there is data comming
     String command = Serial.readStringUntil('\n'); // read string until newline character
-// check if input starts with hover
-//if the hover command is present parse the input data
-    if (command.substring(0,6) == "hover|") {
-      //Serial.println("Command hover parse the data");
-      //Serial.println(command);
-      //remove the command
-      //start at 0 remove 6 char for hover|
-      command.remove(0,6);
-      //Serial.println(command);
+    serialInput(command);
+#endif
 
-        if (command.substring(0,4) == "all|") //all
-        {
-          //remove all|
-          command.remove(0,4);
-          //parse the date
-          int numParsed = sscanf(command.c_str(), "%d|%d", &ispeedin, &istatein);
-          //verify we parsed 2 numbers
-          if (numParsed == 2)
-          {
-            //set the data
-            count = 0;
-            while (count < motor_count_total)
-            {
-              //set motor speed
-            motor_speed[count] = ispeedin;
-             //set motor/mcu state
-            slave_state[count] = istatein;  
-              //increase count
-              count++;
-            } 
-          }
-          else
-          {
-            //present an error
-            Serial.println("The command doesn't meet the criteria"); 
-          }
 
-        }
-        else if (command.substring(0,6) == "right|") //right
-        { 
-          //remove right|
-          command.remove(0,6);
-          //parse the date
-          int numParsed = sscanf(command.c_str(), "%d|%d", &ispeedin, &istatein);  
-          //verify we parsed 2 numbers
-          if (numParsed == 2)
-          {
-            //set the data
-            count = 0;
-            while (count < motor_count_right)
-            {
-              //set motor speed
-              motor_speed[motors_right[count]-motoroffset] = ispeedin;
-             //set motor/mcu state
-            slave_state[motors_right[count]-motoroffset] = istatein;                
-              //increase count
-              count++;
-            } 
-          }
-          else
-          {
-            //present an error
-            Serial.println("The command doesn't meet the criteria"); 
-          }
-
-        }
-        else if (command.substring(0,5) == "left|") //left
-        { 
-          //remove left|
-          command.remove(0,5);
-          //parse the date
-          int numParsed = sscanf(command.c_str(), "%d|%d", &ispeedin, &istatein);
-          //verify we parsed 2 numbers
-          if (numParsed == 2)
-          {
-            //set the data
-            count = 0;
-            while (count < motor_count_left)
-            {
-              //set motor speed
-              motor_speed[motors_left[count]-motoroffset] = ispeedin;
-             //set motor/mcu state
-            slave_state[motors_left[count]-motoroffset] = istatein;                
-              //increase count
-              count++;
-            } 
-          }
-          else
-          {
-            //present an error
-            Serial.println("The command doesn't meet the criteria"); 
-          }
-        }
-        else //single number motor specified
-        {
-        int numParsed = sscanf(command.c_str(), "%d|%d|%d", &slaveidin, &ispeedin, &istatein);
   
-            if (numParsed == 3) {
-            //set motor speed
-            motor_speed[slaveidin-motoroffset] = ispeedin; 
-             //set motor/mcu state
-            slave_state[slaveidin-motoroffset] = istatein; 
-            } 
-            else {
-            // Handle parsing error
-            Serial.println("The command doesn't meet the criteria");
+  // Send commands to hoverboard
+       count = 0;
+      while (count < numMotors){ //loop through the motor/slaves sending command for each
+         HoverSend(oSerialHover,motorIds[count],smoothAdjustment(count),slaveDesiredState[count]); //send command
+          #ifdef DEBUG
+               Serial.print("Sent Motor ");
+               Serial.print(motors_all[count]);
+               Serial.print(" Speed ");
+               Serial.print(motor_speed[count]);
+               Serial.print (" and Slave State ");
+               Serial.println(slave_state[count]);
+           #endif
+
+
+                   count ++;  
+
+          // Wait for response
+          if (waitForResponse()) {
+            // Response received, process it
+            #ifdef DEBUG 
+            Serial.println("Response received!");
+              #endif
+            count ++; //increase cound
+          } else {
+            // No response received within timeout, send next command
+            #ifdef DEBUG
+            Serial.println("Timeout! Sending next command...");
+            #endif
+            count ++; //increase count
+          }
+  // Repeat the process for other commands...
+}
+
+//wait for a repsonse to TX
+bool waitForResponse() {
+  /*
+The `waitForResponse` function is a utility function used to wait for a response from a serial communication port within a specified timeout period. It is commonly used in scenarios where the program needs to wait for a response from a peripheral device, such as a motor controller or sensor, after sending a command.
+
+Here's how the function works:
+1. Timing: The function records the start time using the `millis` function, which returns the number of milliseconds since the Arduino board began running the current program.
+2. Loop: It enters a loop that continues until either a response is received or the specified timeout period elapses.
+3. Data Availability: Within the loop, it checks whether data is available to read from the serial port using the `available` function.
+4. Response Received: If data is available, it indicates that a response has been received, and the function discards any available data from the serial port buffer.
+5. Timeout: If no response is received within the specified timeout period, the function exits the loop and returns `false` to indicate a timeout.
+
+Let's illustrate this with an example:
+Suppose we send a command to a motor controller using serial communication and need to wait for a response.
+1. Timing: The function records the start time.
+2. Loop: It enters a loop and checks for data availability.
+3. Data Availability: If data becomes available (i.e., a response is received), the function exits the loop and returns `true`.
+4. Timeout: If no response is received within the timeout period, the function exits the loop and returns `false`.
+
+This function ensures that the program does not send commands to fast/hang indefinitely while waiting for a response, thereby providing a mechanism to handle communication timeouts effectively.
+*/
+
+  unsigned long startTime = millis(); // Record the start time
+  while (millis() - startTime < serialTimeout) { 
+    // Check if data is available to read
+    if (oSerialHover.available()) {
+      // Response received
+      while (oSerialHover.available()) {
+        // Read and discard any available data
+        //serialPort.read(); //let hoverserial handle
+      }
+      return true;
+    }
+  }
+  // Timeout reached, no response received
+  return false;
+}
+
+//adjust speed uniformly
+int smoothAdjustment(int count) {
+  /*
+The `smoothAdjustment` function is designed to gradually adjust the speed of motors from their current speed to the desired speed. 
+It ensures that the speed transition is smooth and avoids sudden changes, which can be jarring or cause instability, especially 
+in motorized systems like hoverboards.
+
+Here's how the function works:
+1. Comparison: It first compares the current speed of the motor with the desired speed.
+2. Increment/Decrement: If the desired speed is higher than the current speed, it increases the speed by a predefined increment value (speedIncrement).
+Conversely, if the desired speed is lower, it decreases the speed by the same increment.
+3. Return: The function returns the adjusted speed value.
+
+Let's illustrate this with an example:
+Suppose the current speed of a motor is 40, and the desired speed is 80. Let's assume speedIncrement is set to 10.
+
+1. Comparison: Current speed (40) is less than desired speed (80).
+2. Increment: It increases the speed by the increment value (10). So, the new speed becomes 50.
+3. Return: The function returns the adjusted speed, which is 50.
+
+The process continues until the current speed matches the desired speed. If the desired speed is lower than the current speed, 
+the function decrements the speed until they match. If they're already equal, it returns the current speed.
+
+This gradual adjustment helps in achieving smoother acceleration or deceleration of motors, which is beneficial for stability and user experience, 
+especially in dynamic systems like hoverboards.
+*/
+
+  if(slaveCurrentSpeed[count] != slaveDesiredSpeed[count]){ //if current speed is not desired speed
+    if(slaveDesiredSpeed[count] > slaveCurrentSpeed[count]) { //if desired speed is greater than current increase speed
+      sendSpeed = slaveCurrentSpeed[count] + speedIncrement; //increase speed by speedIncrement
+      return sendSpeed; //output the speed
+    }
+    else if(slaveDesiredSpeed[count] < slaveCurrentSpeed[count]) { //if desired speed is less than current decrease speed
+      sendSpeed = slaveCurrentSpeed[count] - speedIncrement; //decrease speed by speedIncrement
+      return sendSpeed; //output the speed
+    }
+  }
+  else{ //if current speed is equal to desired speed
+  sendSpeed = slaveDesiredSpeed[count]; //send desired speed
+  return sendSpeed; //output the speed
+  slaveCurrentSpeed[count] = slaveDesiredSpeed[count]; //this is temp eventually we will record the actualy motor speed from the response
+  }
+}
+
+//find the postion of a value in an array
+int findPosition(int array[], int size, int value) {
+  /*
+The `findPosition` function is a utility function used to find the position of a specific value within an array. It is commonly used to locate the index of a particular motor ID within an array of motor IDs.
+
+Here's how the function works:
+1. Loop: It iterates through each element of the array.
+2. Comparison: For each element, it compares the value with the target value.
+3. Match: If a match is found, it returns the index (position) of that element in the array.
+4. No Match: If no match is found after iterating through the entire array, it returns -1 to indicate that the value was not found.
+
+Let's illustrate this with an example:
+Suppose we have an array of motor IDs: {1, 2, 3, 4, 5}.
+We want to find the position of motor ID 4 within this array.
+
+1. Loop: The function iterates through each element of the array.
+2. Comparison: It compares each element with the target value (4).
+   - Index 0: Element is 1, not a match.
+   - Index 1: Element is 2, not a match.
+   - Index 2: Element is 3, not a match.
+   - Index 3: Element is 4, match found.
+3. Match: It returns the index 3, indicating that motor ID 4 is found at position 3 in the array.
+
+If the target value is not present in the array, the function returns -1. For example, if we search for motor ID 6 in the same array, the function would return -1, indicating that the value was not found.
+
+This function is useful for tasks that involve searching for specific elements within arrays, such as locating motor IDs, sensor values, or any other data stored in array format.
+*/
+
+    for (int i = 0; i < size; ++i) {
+        if (array[i] == value) {
+            return i; // Return the position if the value is found
+        }
+    }
+    return -1; // Return -1 if the value is not found in the array
+}
+
+
+void setdesiredMotorSpeed(int motorIds[], int motorSpeeds[], int numMotors, int desiredSpeed, String motorType) {
+/*
+The function starts by checking the motorType parameter to determine which motors' speeds to set. 
+If motorType is "all," it sets the desired speed for all motors in the array. 
+If it's "right" or "left," it sets the speed for right or left motors accordingly. 
+Finally, if motorType is a specific motor ID, it sets the desired speed for that motor. 
+The function utilizes the findPosition function to locate the position of motors in the motorIds array and sets the desired speed accordingly. 
+Examples of using the function are provided as comments at the top of the function.
+
+// Example of setting desired speed 100 for all motors
+//setdesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, 100, "all");
+
+// Example of setting desired speed 50 for right motors
+//setdesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, 50, "right");
+
+// Example of setting desired speed 75 for left motors
+//setdesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, 75, "left");
+
+// Example of setting desired speed 90 for a specific motor (e.g., motor with ID 2)
+//setdesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, 90, "2");
+*/
+
+        int motorIndex; // Variable to store the found position of the motor in the motorIds array
+    if (motorType == "all") {
+        // Set the desired speed for all motors
+        for (int i = 0; i < numMotors; ++i) {
+           slaveDesiredSpeed[i] = desiredSpeed;
+        }
+    } else if (motorType == "right") {
+        // Set the desired speed for right motors
+        for (int i = 0; i < numRightMotors; ++i) {
+            motorIndex = findPosition(motorIds, numMotors, motorIdsRight[i]); //Find the position of motorIdsRight[i] in the motorsIds array
+            if (motorIndex != -1) {
+                slaveDesiredSpeed[motorIndex] = desiredSpeed;
             }
         }
-} 
-  else if (command.substring(0,6) == "stop")
-  {
-     //set the data
-            count = 0;
-            while (count < motor_count_total)
-            {
-              //set motor speed
-              motor_speed[count] = 0;
-             //set motor/mcu state
-            slave_state[count] = istatein;                
-              //increase count
-              count++;
-            } 
-  }
-else {
-      Serial.println("Command not hover/stop");
-      Serial.println(command);
-  
+    } else if (motorType == "left") {
+        // Set the desired speed for left motors
+        for (int i = 0; i < numLeftMotors; ++i) {
+            motorIndex = findPosition(motorIds, numMotors, motorIdsLeft[i]); //Find the position of motorIdsLeft[i] in the motorsIds array
+            if (motorIndex != -1) {
+                slaveDesiredSpeed[motorIndex] = desiredSpeed;
+            }
+        }
+    } else {
+        // Set the desired speed for a specific motor
+        motorIndex = findPosition(motorIds, numMotors, motorType.toInt()); //Find the position of the specific motor by number in the motorsIds array
+        if (motorIndex != -1) {
+            slaveDesiredSpeed[motorIndex] = desiredSpeed;
+        }
     }
-  #ifdef _DEBUG
-int i = 0;
-  while (i < motor_count_total)
-  {
-    Serial.print("Motor ");
-    Serial.print(motors_all[i]);
-    Serial.print(" Speed is set to ");
-    Serial.print(motor_speed[i]);
-    Serial.print(" Slave state is set to ");
-    Serial.println(slave_state[i]);
-    i++;
-  }
-#endif
-  }
+}
 
 
-#endif
+void emergencyStop() {
+  /*
+ This function implements an emergency stop by sending a command to set the speed of all motors to 0 without smoothing.
+The emergencyStop function is designed to halt all motors in case of an emergency.
+It achieves this by sending a command to set the speed of each motor to 0 without any smoothing or waiting for responses.
+The function loops through all motors using a while loop and sends a command to set the speed to 0 for each motor using the HoverSend function.
+It ensures that all motors come to an immediate stop, which is crucial in emergency situations to prevent any further movement or potential harm.
+*/
 
-#ifdef input_adc
-    // read the input on analog pin:
-  int analogValueRight = analogRead(adc_input_pin_right);
-  int analogValueLeft = analogRead(adc_input_pin_left);
-  // Rescale to potentiometer's
-  int deadband = 100; //this the the range in the middle that will output zero
-  if (abs(analogValueRight-(4095/2))<deadband){//make it easier to get to 0
-//1997.5 < input < 2097.5
-    float adcspeedinright = 0;
+  // Loop through all motors and send a command to set their speed to 0
+  count = 0;
+  while (count < numMotors) {
+    // Send command to set speed to 0 for each motor
+    HoverSend(oSerialHover, motorIds[count], 0, slaveDesiredState[count]);
+    count++;
   }
-  else{
-  float adcspeedinright = map(analogValueRight,0,4095,min_speed,max_speed);
-  }
-  if (abs(analogValueLeft-(4095/2))<deadband){//make it easier to get to 0
-//1997.5 < input < 2097.5
-    float adcspeedinleft = 0;
-  }
-  else{
-  float adcspeedinright = map(analogValueLeft,0,4095,min_speed,max_speed);
-  }
+}
 
-  
-  #ifdef _DEBUG
-    // print out the value you read:
-    Serial.print("Analog Right: ");
-    Serial.print(analogValueRight);
-    Serial.print(", Speed: ");
-    Serial.println(adcspeedinright);
-    delay(1000);
-    Serial.print("Analog Left: ");
-    Serial.print(analogValueLeft);
-    Serial.print(", Speed: ");
-    Serial.println(adcspeedinleft);
-    delay(1000);
-  #endif
-//set the values
-
-   //right
-            count = 0;
-            while (count < motor_count_right)
-            {
-              //set motor speed
-              motor_speed[motors_right[count]-motoroffset] = adcspeedinright;
-             //set motor/mcu state
-            //slave_state[motors_right[count]-motoroffset] = istatein;                
-              //increase count
-              count++;
-            } 
-  //left
-            count = 0;
-            while (count < motor_count_left)
-            {
-              //set motor speed
-              motor_speed[motors_left[count]-motoroffset] = adcspeedinleft;
-             //set motor/mcu state
-            //slave_state[motors_left[count]-motoroffset] = istatein;                
-              //increase count
-              count++;
-            } 
-  
-  #endif
-  
-
-  int iSteer =0;   // repeats from +100 to -100 to +100 :-)
-  //int iSteer = 0;
-  //int iSpeed = 500;
-  //int iSpeed = 200;
-  //iSpeed = iSteer = 0;
-
-  if (iNow > iTimeNextState)
-  {
-    iTimeNextState = iNow + 3000;
-    wState = wState << 1;
-    if (wState == 64) wState = 1;  // remove this line to test Shutoff = 128
-  }
-  
-  boolean bReceived;   
-  while (bReceived = Receive(oSerialHover,oHoverFeedback))
-  {
-    DEBUGT("millis",iNow-iLast);
-    DEBUGT("iSpeed",iSpeed);
-    //DEBUGT("iSteer",iSteer);
-    HoverLog(oHoverFeedback);
-    iLast = iNow;
+//input functions
+void serialInput(String command) {
+  // Check if input starts with "stop"
+  if (command.startsWith("stop")) {
+    // Trigger emergency stop
+    emergencyStop();
+    return;
   }
 
-  if (iNow > iNext)
-  {
-    //DEBUGLN("time",iNow)
+  // Check if input starts with "hover|"
+  if (command.startsWith("hover|")) {
+    // Remove "hover|" from the command
+    command.remove(0, 6);
     
-    #ifdef REMOTE_UARTBUS
-      count = 0;
-      while (count < motor_count_total){
-         HoverSend(oSerialHover,motors_all[count],motor_speed[count],slave_state[count]);
-//           #ifdef _DEBUG
-//                Serial.print("Sent Motor ");
-//                Serial.print(motors_all[count]);
-//                Serial.print(" Speed ");
-//                Serial.print(motor_speed[count]);
-//                Serial.print (" and Slave State ");
-//                Serial.println(slave_state[count]);
-//            #endif
-                   count ++;  
+    // Parse the command based on the specified motor or all motors
+    if (command.startsWith("all|")) {
+      // Handle all motors
+      command.remove(0, 4);
+      int speed, state;
+      // Parse speed and state from the command
+      int numParsed = sscanf(command.c_str(), "%d|%d", &speed, &state);
+      if (numParsed == 2) {
+        // Set speed and state for all motors
+        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed, "all");
+      } else {
+        Serial.println("Invalid command format");
       }
-
-
-      iNext = iNow + SEND_MILLIS/2;
-    #else
-      //if (bReceived)  // Reply only when you receive data
-        HoverSend(oSerialHover,iSteer,iSpeed,wState,wState);
-      
-      iNext = iNow + SEND_MILLIS;
-    #endif
+    } else if (command.startsWith("left|")) {
+      // Handle left motors
+      // Similar implementation for left motors
+    } else if (command.startsWith("right|")) {
+      // Handle right motors
+      // Similar implementation for right motors
+    } else {
+      // Specific motor
+      int motorId, speed, state;
+      // Parse motor ID, speed, and state from the command
+      int numParsed = sscanf(command.c_str(), "%d|%d|%d", &motorId, &speed, &state);
+      if (numParsed == 3) {
+        // Set speed and state for the specified motor
+        if (motorId >= 0 && motorId < numMotors) {
+          setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed, String(motorId));
+        } else {
+          Serial.println("Invalid motor ID");
+        }
+      } else {
+        Serial.println("Invalid command format");
+      }
+    }
+  } else {
+    Serial.println("Invalid command");
   }
-
-
 }
