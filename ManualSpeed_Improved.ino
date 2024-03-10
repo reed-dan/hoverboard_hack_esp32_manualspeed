@@ -3,21 +3,23 @@
 #include "hoverserial.h"
 
 // Variable Declarations
-int numMotors = 2; // Number of motors/slaves connected
-int numRightMotors = 1; // Number of right motors/slaves connected
-int numLeftMotors = 1;  // Number of left motors/slaves connected
-int motorIds[numMotors] = {1, 2}; // Motor IDs
+const size_t numMotors = 1; // Number of motors/slaves connected
+const size_t numRightMotors = 1; // Number of right motors/slaves connected
+const size_t numLeftMotors = 1;  // Number of left motors/slaves connected
+int motorIds[numMotors] = {1}; // Motor IDs
 int motorIdsRight[numRightMotors] = {1}; // Motor IDs for right motors
-int motorIdsLeft[numLeftMotors] = {2}; // Motor IDs for left motors
+int motorIdsLeft[numLeftMotors] = {1}; // Motor IDs for left motors
 int slaveCurrentSpeed[numMotors] = {0}; // Current speeds of motors (initialized to 0)
-int slaveDesiredSpeed[numMotors] = {0}; // Desired speeds of motors (initialized to 0)
-int speedIncrement = 10; // Increment speed for gradual acceleration
+int slaveDesiredSpeed[numMotors] = {300}; // Desired speeds of motors (initialized to 0)
+const size_t speedIncrement = 10; // Increment speed for gradual acceleration
 int sendSpeed = 0; // The speed sent to the slave/motor, typically equals desiredSpeed unless desired != current
 int slaveDesiredState[numMotors] = {1}; // Desired states of slaves (initialized to 1)
 int slaveCurrentState[numMotors] = {0}; // Current states of slaves (initialized to 0)
 int slaveCurrentVolt[numMotors] = {0}; // Current volts of slaves
 int slaveCurrentAmp[numMotors] = {0}; // Current amps of slaves
 int slaveCurrentHallSteps[numMotors] = {0}; // Current hall steps of motors
+int count = 0;
+
 
 // Constants
 #define debugSerialBaud  115200 // Baud Rate for ESP32 to computer serial comm
@@ -30,6 +32,9 @@ int slaveCurrentHallSteps[numMotors] = {0}; // Current hall steps of motors
 //Control Method
 #define input_serial
 
+#define REMOTE_UARTBUS
+#define _DEBUG      // debug output to first hardware serial port
+#define DEBUG_RX
 
 // Debug flag
 #define DEBUG
@@ -38,7 +43,10 @@ void setup() {
   // put your setup code here, to run once:
     Serial.begin(debugSerialBaud);
     Serial.println("Hello DanBot Hoverbaord controler");
+    SerialHover2Server oHoverFeedback;
  HoverSetupEsp32(oSerialHover,serialHoverBaud,serialHoverRxPin,serialHoverTxPin);
+          HoverSend(oSerialHover,1,300,1); //send command
+
 }
 
 void loop() {
@@ -50,6 +58,7 @@ void loop() {
   if (Serial.available()) { // if there is data comming
     String command = Serial.readStringUntil('\n'); // read string until newline character
     serialInput(command);
+    }
 #endif
 
 
@@ -57,14 +66,14 @@ void loop() {
   // Send commands to hoverboard
        count = 0;
       while (count < numMotors){ //loop through the motor/slaves sending command for each
-         HoverSend(oSerialHover,motorIds[count],smoothAdjustment(count),slaveDesiredState[count]); //send command
+         HoverSend(oSerialHover,motorIds[findPosition(motorIds, numMotors, motorIds[count])],smoothAdjustment(count),slaveDesiredState[count]); //send command
           #ifdef DEBUG
                Serial.print("Sent Motor ");
-               Serial.print(motors_all[count]);
+               Serial.print(motorIds[count]);
                Serial.print(" Speed ");
-               Serial.print(motor_speed[count]);
+               Serial.print(slaveDesiredSpeed[count]);
                Serial.print (" and Slave State ");
-               Serial.println(slave_state[count]);
+               Serial.println(slaveDesiredState[count]);
            #endif
 
 
@@ -85,6 +94,7 @@ void loop() {
             count ++; //increase count
           }
   // Repeat the process for other commands...
+}
 }
 
 //wait for a repsonse to TX
@@ -110,7 +120,7 @@ This function ensures that the program does not send commands to fast/hang indef
 */
 
   unsigned long startTime = millis(); // Record the start time
-  while (millis() - startTime < serialTimeout) { 
+  while (millis() - startTime < serialHoverTimeout) { 
     // Check if data is available to read
     if (oSerialHover.available()) {
       // Response received
@@ -206,7 +216,7 @@ This function is useful for tasks that involve searching for specific elements w
 }
 
 
-void setdesiredMotorSpeed(int motorIds[], int motorSpeeds[], int numMotors, int desiredSpeed, String motorType) {
+void setDesiredMotorSpeed(int motorIds[], int motorSpeeds[], int numMotors, int desiredSpeed, String motorType) {
 /*
 The function starts by checking the motorType parameter to determine which motors' speeds to set. 
 If motorType is "all," it sets the desired speed for all motors in the array. 
