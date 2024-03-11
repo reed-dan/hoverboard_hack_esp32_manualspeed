@@ -144,23 +144,19 @@ indefinitely while waiting for a response, thereby providing a mechanism to
 handle communication timeouts effectively.
 */
 
-  unsigned long startTime = millis(); // Record the start time
-  while (millis() - startTime < serialHoverTimeout) {
-    // Check if data is available to read
-    if (oSerialHover.available()) {
-      // Response received
-      while (Receive(oSerialHover, oHoverFeedback)) {
+    unsigned long startTime = millis(); // Record the start time
+    while (millis() - startTime < serialHoverTimeout) {
+        boolean bReceived;   
+        if (Receive(oSerialHover, oHoverFeedback) != 0 || (bReceived = Receive(oSerialHover, oHoverFeedback))) {
 #ifdef DEBUGx
-        //Serial.println(oHoverFeedback);
+            //Serial.println(oHoverFeedback);
 #endif
-        HoverLog(oHoverFeedback);
-      }
-      return true;
+            HoverLog(oHoverFeedback);
+            return true;
+        }
     }
-  }
-  // Timeout reached, no response received
-  return false;
-}
+    // Timeout reached, no response received
+    return false;
 
 // adjust speed uniformly
 int smoothAdjustment(int count) {
