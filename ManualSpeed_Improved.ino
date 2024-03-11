@@ -1,3 +1,8 @@
+//must be before include (ask how I knwo!)
+#define REMOTE_UARTBUS
+#define _DEBUG      // debug output to first hardware serial port
+#define DEBUG_RX
+
 // Includes
 #include "util.h"
 #include "hoverserial.h"
@@ -32,12 +37,10 @@ int count = 0;
 //Control Method
 #define input_serial
 
-#define REMOTE_UARTBUS
-#define _DEBUG      // debug output to first hardware serial port
-#define DEBUG_RX
+
 
 // Debug flag
-#define DEBUG
+#define DEBUGx
 
 void setup() {
   // put your setup code here, to run once:
@@ -67,7 +70,7 @@ void loop() {
        count = 0;
       while (count < numMotors){ //loop through the motor/slaves sending command for each
          HoverSend(oSerialHover,motorIds[findPosition(motorIds, numMotors, motorIds[count])],smoothAdjustment(count),slaveDesiredState[count]); //send command
-          #ifdef DEBUG
+          #ifdef DEBUGx
                Serial.print("Sent Motor ");
                Serial.print(motorIds[count]);
                Serial.print(" Speed ");
@@ -82,13 +85,13 @@ void loop() {
           // Wait for response
           if (waitForResponse()) {
             // Response received, process it
-            #ifdef DEBUG 
+            #ifdef DEBUGx
             Serial.println("Response received!");
               #endif
             count ++; //increase cound
           } else {
             // No response received within timeout, send next command
-            #ifdef DEBUG
+            #ifdef DEBUGx
             Serial.println("Timeout! Sending next command...");
             #endif
             count ++; //increase count
