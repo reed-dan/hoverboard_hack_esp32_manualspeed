@@ -1,7 +1,7 @@
 // must be before include (ask how I knwo!)
 #define REMOTE_UARTBUS
 #define _DEBUG // debug output to first hardware serial port
-#define DEBUG_RX
+//#define DEBUG_RX
 
 // Includes
 #include "util.h"
@@ -18,7 +18,7 @@ int motorIdsLeft[numLeftMotors] = {1};   // Motor IDs for left motors
 int slaveCurrentSpeed[numMotors] = {
     0}; // Current speeds of motors (initialized to 0)
 int slaveDesiredSpeed[numMotors] = {0};                         // Desired speeds of motors (initialized to 0)
-const size_t speedIncrement = 10; // Increment speed for gradual acceleration
+const size_t speedIncrement = 1; // Increment speed for gradual acceleration
 int sendSpeed = 0; // The speed sent to the slave/motor, typically equals
                    // desiredSpeed unless desired != current
 int slaveDesiredState[numMotors] = {
@@ -45,6 +45,7 @@ int count = 0;
 
 // Debug flag
 #define DEBUGx
+//#define DEBUGsmooth
 
 void setup() {
   // put your setup code here, to run once:
@@ -68,7 +69,6 @@ void loop() {
     serialInput(command);
   }
 #endif
-
   // Send commands to hoverboard
   count = 0;
   while (count <
@@ -77,6 +77,7 @@ void loop() {
               motorIds[findPosition(motorIds, numMotors, motorIds[count])],
               smoothAdjustment(count),
               slaveDesiredState[count]); // send command
+
 #ifdef DEBUGx
     Serial.print("Sent Motor ");
     Serial.print(motorIds[count]);
@@ -157,6 +158,7 @@ handle communication timeouts effectively.
     }
     // Timeout reached, no response received
     return false;
+}
 
 // adjust speed uniformly
 int smoothAdjustment(int count) {
@@ -193,28 +195,56 @@ of motors, which is beneficial for stability and user experience, especially in
 dynamic systems like hoverboards.
 */
 
-  if (slaveCurrentSpeed[count] !=
+  while (slaveCurrentSpeed[count] !=
       slaveDesiredSpeed[count]) { // if current speed is not desired speed
+      #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Current Speed is not equal to Desired Speed. Current Speed:  ");
+      Serial.print(slaveCurrentSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
     if (slaveDesiredSpeed[count] >
         slaveCurrentSpeed[count]) { // if desired speed is greater than current
+             #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Current Speed is less than to Desired Speed increase speed. Current Speed:  ");
+      Serial.print(slaveCurrentSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
                                     // increase speed
-      sendSpeed = slaveCurrentSpeed[count] +
-                  speedIncrement;           // increase speed by speedIncrement
-      return sendSpeed;                     // output the speed
+                                    Serial.print("SendSpeed  =");
+                                    Serial.print(sendSpeed);
+                                    Serial.println(" increment");
+      sendSpeed = slaveCurrentSpeed[count] + speedIncrement;  
+                                          Serial.print("SendSpeed now  =");
+                                    Serial.println(sendSpeed);
       slaveCurrentSpeed[count] = sendSpeed; // set current speed to send speed
+      return sendSpeed;                     // output the speed
+
     } else if (slaveDesiredSpeed[count] <
                slaveCurrentSpeed[count]) { // if desired speed is less than
                                            // current decrease speed
+                                                 #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Current Speed is greater than Desired Speed.  Decrease speed. Current Speed:  ");
+      Serial.print(slaveCurrentSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
       sendSpeed = slaveCurrentSpeed[count] -
                   speedIncrement;           // decrease speed by speedIncrement
-      return sendSpeed;                     // output the speed
       slaveCurrentSpeed[count] = sendSpeed; // set current speed to send speed
+      return sendSpeed;                     // output the speed
     }
-  } else { // if current speed is equal to desired speed
+  } 
+   // if current speed is equal to desired speed
+          #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Current Speed is equal to Desired Speed. Send desired speed. Current Speed:  ");
+      Serial.print(slaveCurrentSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
     sendSpeed = slaveDesiredSpeed[count]; // send desired speed
     return sendSpeed;                     // output the speed
-  }
-      return sendSpeed;                     // output the speed
 }
 
 // find the postion of a value in an array
@@ -348,8 +378,11 @@ in emergency situations to prevent any further movement or potential harm.
   while (count < numMotors) {
     // Send command to set speed to 0 for each motor
     HoverSend(oSerialHover, motorIds[count], 0, slaveDesiredState[count]);
+    slaveDesiredSpeed[count]=0;
+    slaveCurrentSpeed[count]=0;
     count++;
   }
+
 }
 
 // input functions
