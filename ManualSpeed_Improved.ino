@@ -4,31 +4,41 @@
 //#define DEBUG_RX
 
 // Includes
-#include "hoverserial.h"
 #include "util.h"
+#include "hoverserial.h"
+
 
 // Variable Declarations
+//settings
 const size_t numMotors = 1;      // Number of motors/slaves connected
 const size_t numRightMotors = 1; // Number of right motors/slaves connected
 const size_t numLeftMotors = 1;  // Number of left motors/slaves connected
 int motorIds[numMotors] = {1};   // Motor IDs
 int motorIdsRight[numRightMotors] = {1}; // Motor IDs for right motors
 int motorIdsLeft[numLeftMotors] = {1};   // Motor IDs for left motors
-int slaveCurrentSpeed[numMotors] = {
-    0}; // Current speeds of motors (initialized to 0)
-int slaveDesiredSpeed[numMotors] = {
-    0};                          // Desired speeds of motors (initialized to 0)
 const size_t speedIncrement = 1; // Increment speed for gradual acceleration
-int sendSpeed = 0; // The speed sent to the slave/motor, typically equals
-                   // desiredSpeed unless desired != current
-int slaveDesiredState[numMotors] = {
-    1}; // Desired states of slaves (initialized to 1)
-int slaveCurrentState[numMotors] = {
-    0}; // Current states of slaves (initialized to 0)
+int minSpeed = -1000; //the min speed that is avialable
+int maxSpeed = 1000; //The max speed that is avialable
+int minStartSpeed = 300; //the minimum speed the motor needs to spin (otherwise we always read current speed 0 and never get anywhere)
+
+//don't change these
+int slaveCurrentSpeed[numMotors] = {0}; // Current speeds of motors (initialized to 0)
+int slaveSendSpeed[numMotors] = {0}; // Current speeds of motors (initialized to 0)
+int slaveDesiredSpeed[numMotors] = {0}; // Desired speeds of motors (initialized to 0)
+int slaveDesiredState[numMotors] = {1}; // Desired states of slaves (initialized to 1)
+int slaveCurrentState[numMotors] = {0}; // Current states of slaves (initialized to 0)
 int slaveCurrentVolt[numMotors] = {0};      // Current volts of slaves
 int slaveCurrentAmp[numMotors] = {0};       // Current amps of slaves
-int slaveCurrentHallSteps[numMotors] = {0}; // Current hall steps of motors
+int slaveCurrentOdometer[numMotors] = {0}; // Current hall steps of motors
 int count = 0;
+//int sendSpeed = 0; // The speed sent to the slave/motor, typically equals desiredSpeed unless desired != current
+
+
+// Debug flag
+#define DEBUGx
+//#define DEBUGsmooth
+//#define debug_adcinput
+//#define debug_updateArrays
 
 // Constants
 #define debugSerialBaud 115200 // Baud Rate for ESP32 to computer serial comm
@@ -38,15 +48,21 @@ int count = 0;
 #define serialHoverTimeout                                                     \
   1000 // Timeout period in milliseconds for response from hover
 #define oSerialHover Serial2 // ESP32 Serial object for communication with hover
-SerialHover2Server oHoverFeedback;
+  SerialHover2Server oHoverFeedback;
 
 // Control Method
-#define input_serial
+#define input_serial //input commands via serial terminal
+//#define input_adc //input commands via potentialometers
+  #ifdef input_adc
+      //set both pins the same if you only have 1 adc
+    int adc_input_pin_right = 36; //analog input pin for the right potentiometer
+    int adc_input_pin_left = 37; //analog input pin for the left potentiometer
+    int adc_deadband = 100; //this the the range in the middle that will output zero
+  #endif
 
-// Debug flag
-#define DEBUGx
-//#define DEBUGsmooth
 
+
+//
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(debugSerialBaud);
@@ -58,8 +74,9 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-
 // input processing
+//
+//serial
 #ifdef input_serial
   // read serial input
   if (Serial.available()) { // if there is data comming
@@ -68,20 +85,23 @@ void loop() {
     serialInput(command);
   }
 #endif
+//adc
+#ifdef input_adc
+ADCInput();
+#endif
+
+//
   // Send commands to hoverboard
   count = 0;
-  while (count <
-         numMotors) { // loop through the motor/slaves sending command for each
-    HoverSend(oSerialHover,
-              motorIds[findPosition(motorIds, numMotors, motorIds[count])],
-              smoothAdjustment(count),
-              slaveDesiredState[count]); // send command
+  while (count < numMotors) { // loop through the motor/slaves sending command for each
+    HoverSend(oSerialHover, motorIds[findPosition(motorIds, numMotors, motorIds[count])], smoothAdjustment(count), slaveDesiredState[count]); // send command
+//    HoverSend(oSerialHover, motorIds[findPosition(motorIds, numMotors, motorIds[count])], slaveDesiredSpeed[count], slaveDesiredState[count]); // send command
 
 #ifdef DEBUGx
     Serial.print("Sent Motor ");
     Serial.print(motorIds[count]);
     Serial.print(" Speed ");
-    Serial.print(slaveDesiredSpeed[count]);
+    Serial.print(slaveSendSpeed[count]);
     Serial.print(" and Slave State ");
     Serial.println(slaveDesiredState[count]);
 #endif
@@ -92,13 +112,13 @@ void loop() {
     if (waitForResponse()) {
 // Response received, process it
 #ifdef DEBUGx
-      Serial.println("Response received!");
+      //Serial.println("Response received!");
 #endif
       count++; // increase cound
     } else {
 // No response received within timeout, send next command
 #ifdef DEBUGx
-      Serial.println("Timeout! Sending next command...");
+      //Serial.println("Timeout! Sending next command...");
 #endif
       count++; // increase count
     }
@@ -108,185 +128,179 @@ void loop() {
 
 // wait for a repsonse to sent command
 bool waitForResponse() {
-  /*
-The `waitForResponse` function is a utility function used to wait for a response
-from a serial communication port within a specified timeout period. It is
-commonly used in scenarios where the program needs to wait for a response from a
-peripheral device, such as a motor controller or sensor, after sending a
-command.
+ //Description
+     /*
+    The `waitForResponse` function is a utility function used to wait for a response
+    from a serial communication port within a specified timeout period. It is
+    commonly used in scenarios where the program needs to wait for a response from a
+    peripheral device, such as a motor controller or sensor, after sending a
+    command.
 
-Here's how the function works:
-1. Timing: The function records the start time using the `millis` function,
-which returns the number of milliseconds since the Arduino board began running
-the current program.
-2. Loop: It enters a loop that continues until either a response is received or
-the specified timeout period elapses.
-3. Data Availability: Within the loop, it checks whether data is available to
-read from the serial port using the `available` function.
-4. Response Received: If data is available, it indicates that a response has
-been received, and the function discards any available data from the serial port
-buffer.
-5. Timeout: If no response is received within the specified timeout period, the
-function exits the loop and returns `false` to indicate a timeout.
+    Here's how the function works:
+    1. Timing: The function records the start time using the `millis` function,
+    which returns the number of milliseconds since the Arduino board began running
+    the current program.
+    2. Loop: It enters a loop that continues until either a response is received or
+    the specified timeout period elapses.
+    3. Data Availability: Within the loop, it checks whether data is available to
+    read from the serial port using the `available` function.
+    4. Response Received: If data is available, it indicates that a response has
+    been received, and the function discards any available data from the serial port
+    buffer.
+    5. Timeout: If no response is received within the specified timeout period, the
+    function exits the loop and returns `false` to indicate a timeout.
 
-Let's illustrate this with an example:
-Suppose we send a command to a motor controller using serial communication and
-need to wait for a response.
-1. Timing: The function records the start time.
-2. Loop: It enters a loop and checks for data availability.
-3. Data Availability: If data becomes available (i.e., a response is received),
-the function exits the loop and returns `true`.
-4. Timeout: If no response is received within the timeout period, the function
-exits the loop and returns `false`.
+    Let's illustrate this with an example:
+    Suppose we send a command to a motor controller using serial communication and
+    need to wait for a response.
+    1. Timing: The function records the start time.
+    2. Loop: It enters a loop and checks for data availability.
+    3. Data Availability: If data becomes available (i.e., a response is received),
+    the function exits the loop and returns `true`.
+    4. Timeout: If no response is received within the timeout period, the function
+    exits the loop and returns `false`.
 
-This function ensures that the program does not send commands to fast/hang
-indefinitely while waiting for a response, thereby providing a mechanism to
-handle communication timeouts effectively.
-*/
+    This function ensures that the program does not send commands to fast/hang
+    indefinitely while waiting for a response, thereby providing a mechanism to
+    handle communication timeouts effectively.
+    */
 
-  unsigned long startTime = millis(); // Record the start time
-  while (millis() - startTime < serialHoverTimeout) {
-    boolean bReceived;
-    if (Receive(oSerialHover, oHoverFeedback) != 0 ||
-        (bReceived = Receive(oSerialHover, oHoverFeedback))) {
+    unsigned long startTime = millis(); // Record the start time
+    while (millis() - startTime < serialHoverTimeout) {
+        boolean bReceived;   
+        if (Receive(oSerialHover, oHoverFeedback) != 0 || (bReceived = Receive(oSerialHover, oHoverFeedback))) {
 #ifdef DEBUGx
-      // Serial.println(oHoverFeedback);
-#endif
-      HoverLog(oHoverFeedback);
-      return true;
-    }
-  }
-  // Timeout reached, no response received
-  return false;
+            // Serial.println(oHoverFeedback);
+  #endif
+      // Print hover response
+      HoverLog(oHoverFeedback);  
+      // Update arrays with the new data
+      updateArrays(oHoverFeedback);
+              return true;
+          }
+      }
+      // Timeout reached, no response received
+      return false;
 }
 
 // adjust speed uniformly
 int smoothAdjustment(int count) {
-  /*
-The `smoothAdjustment` function is designed to gradually adjust the speed of
-motors from their current speed to the desired speed. It ensures that the speed
-transition is smooth and avoids sudden changes, which can be jarring or cause
-instability, especially in motorized systems like hoverboards.
+   //Description   
+   /*
+    The `smoothAdjustment` function is designed to gradually adjust the speed of
+    motors from their current speed to the desired speed. It ensures that the speed
+    transition is smooth and avoids sudden changes, which can be jarring or cause
+    instability, especially in motorized systems like hoverboards.
 
-Here's how the function works:
-1. Comparison: It first compares the current speed of the motor with the desired
-speed.
-2. Increment/Decrement: If the desired speed is higher than the current speed,
-it increases the speed by a predefined increment value (speedIncrement).
-Conversely, if the desired speed is lower, it decreases the speed by the same
-increment.
-3. Return: The function returns the adjusted speed value.
+    Here's how the function works:
+    1. Comparison: It first compares the current speed of the motor with the desired
+    speed.
+    2. Increment/Decrement: If the desired speed is higher than the current speed,
+    it increases the speed by a predefined increment value (speedIncrement).
+    Conversely, if the desired speed is lower, it decreases the speed by the same
+    increment.
+    3. Return: The function returns the adjusted speed value.
 
-Let's illustrate this with an example:
-Suppose the current speed of a motor is 40, and the desired speed is 80. Let's
-assume speedIncrement is set to 10.
+    Let's illustrate this with an example:
+    Suppose the current speed of a motor is 40, and the desired speed is 80. Let's
+    assume speedIncrement is set to 10.
 
-1. Comparison: Current speed (40) is less than desired speed (80).
-2. Increment: It increases the speed by the increment value (10). So, the new
-speed becomes 50.
-3. Return: The function returns the adjusted speed, which is 50.
+    1. Comparison: Current speed (40) is less than desired speed (80).
+    2. Increment: It increases the speed by the increment value (10). So, the new
+    speed becomes 50.
+    3. Return: The function returns the adjusted speed, which is 50.
 
-The process continues until the current speed matches the desired speed. If the
-desired speed is lower than the current speed, the function decrements the speed
-until they match. If they're already equal, it returns the current speed.
+    The process continues until the current speed matches the desired speed. If the
+    desired speed is lower than the current speed, the function decrements the speed
+    until they match. If they're already equal, it returns the current speed.
 
-This gradual adjustment helps in achieving smoother acceleration or deceleration
-of motors, which is beneficial for stability and user experience, especially in
-dynamic systems like hoverboards.
-*/
+    This gradual adjustment helps in achieving smoother acceleration or deceleration
+    of motors, which is beneficial for stability and user experience, especially in
+    dynamic systems like hoverboards.
+    */
 
-  while (slaveCurrentSpeed[count] !=
-         slaveDesiredSpeed[count]) { // if current speed is not desired speed
-#ifdef DEBUGsmooth
-    Serial.print("SmoothAdjustment: Current Speed is not equal to Desired "
-                 "Speed. Current Speed:  ");
-    Serial.print(slaveCurrentSpeed[count]);
-    Serial.print(" & Desired Speed: ");
-    Serial.println(slaveDesiredSpeed[count]);
-#endif
-    if (slaveDesiredSpeed[count] >
-        slaveCurrentSpeed[count]) { // if desired speed is greater than current
-#ifdef DEBUGsmooth
-      Serial.print("SmoothAdjustment: Current Speed is less than to Desired "
-                   "Speed increase speed. Current Speed:  ");
-      Serial.print(slaveCurrentSpeed[count]);
+  while (slaveSendSpeed[count] != slaveDesiredSpeed[count]) { // if current speed is not desired speed
+      #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Sent Speed is not equal to Desired Speed. Sent Speed:  ");
+      Serial.print(slaveSendSpeed[count]);
       Serial.print(" & Desired Speed: ");
       Serial.println(slaveDesiredSpeed[count]);
-#endif
-      // increase speed
-      Serial.print("SendSpeed  =");
-      Serial.print(sendSpeed);
-      Serial.println(" increment");
-      sendSpeed = slaveCurrentSpeed[count] + speedIncrement;
-      Serial.print("SendSpeed now  =");
-      Serial.println(sendSpeed);
-      slaveCurrentSpeed[count] = sendSpeed; // set current speed to send speed
-      return sendSpeed;                     // output the speed
+      #endif
+   
+    if (slaveDesiredSpeed[count] > slaveSendSpeed[count]) { // if desired speed is greater than current
+      #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Sent Speed is less than to Desired Speed increase speed. Sent Speed:  ");
+      Serial.print(slaveSendSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
+                                    // increase speed
+                                    Serial.print("SendSpeed =");
+                                    Serial.print(slaveSendSpeed[count]);
+                                    Serial.println(" increment");
+      slaveSendSpeed[count] = slaveSendSpeed[count] + speedIncrement;  
+                                          Serial.print("SendSpeed now =");
+                                    Serial.println(slaveSendSpeed[count]);
+      return slaveSendSpeed[count];                     // output the speed
 
-    } else if (slaveDesiredSpeed[count] <
-               slaveCurrentSpeed[count]) { // if desired speed is less than
+    } else if (slaveDesiredSpeed[count] < slaveSendSpeed[count]) { // if desired speed is less than
                                            // current decrease speed
-#ifdef DEBUGsmooth
-      Serial.print("SmoothAdjustment: Current Speed is greater than Desired "
-                   "Speed.  Decrease speed. Current Speed:  ");
-      Serial.print(slaveCurrentSpeed[count]);
+                                                 #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Current Speed is greater than Sent Speed.  Decrease speed. Sent Speed:  ");
+      Serial.print(slaveSendSpeed[count]);
       Serial.print(" & Desired Speed: ");
       Serial.println(slaveDesiredSpeed[count]);
-#endif
-      sendSpeed = slaveCurrentSpeed[count] -
-                  speedIncrement;           // decrease speed by speedIncrement
-      slaveCurrentSpeed[count] = sendSpeed; // set current speed to send speed
-      return sendSpeed;                     // output the speed
+      #endif
+      slaveSendSpeed[count] = slaveSendSpeed[count] - speedIncrement;           // decrease speed by speedIncrement
+      return slaveSendSpeed[count];                     // output the speed
     }
-  }
-  // if current speed is equal to desired speed
-#ifdef DEBUGsmooth
-  Serial.print("SmoothAdjustment: Current Speed is equal to Desired Speed. "
-               "Send desired speed. Current Speed:  ");
-  Serial.print(slaveCurrentSpeed[count]);
-  Serial.print(" & Desired Speed: ");
-  Serial.println(slaveDesiredSpeed[count]);
-#endif
-  sendSpeed = slaveDesiredSpeed[count]; // send desired speed
-  return sendSpeed;                     // output the speed
+  } 
+   // if current speed is equal to desired speed
+          #ifdef DEBUGsmooth
+      Serial.print("SmoothAdjustment: Sent Speed is equal to Desired Speed. Send desired speed. Sent Speed:  ");
+      Serial.print(slaveSendSpeed[count]);
+      Serial.print(" & Desired Speed: ");
+      Serial.println(slaveDesiredSpeed[count]);
+      #endif
+    return slaveSendSpeed[count];                     // output the speed
 }
 
 // find the postion of a value in an array
 int findPosition(int array[], int size, int value) {
-  /*
-The `findPosition` function is a utility function used to find the position of a
-specific value within an array. It is commonly used to locate the index of a
-particular motor ID within an array of motor IDs.
+  //Description
+    /*The `findPosition` function is a utility function used to find the position of a
+    specific value within an array. It is commonly used to locate the index of a
+    particular motor ID within an array of motor IDs.
 
-Here's how the function works:
-1. Loop: It iterates through each element of the array.
-2. Comparison: For each element, it compares the value with the target value.
-3. Match: If a match is found, it returns the index (position) of that element
-in the array.
-4. No Match: If no match is found after iterating through the entire array, it
-returns -1 to indicate that the value was not found.
+    Here's how the function works:
+    1. Loop: It iterates through each element of the array.
+    2. Comparison: For each element, it compares the value with the target value.
+    3. Match: If a match is found, it returns the index (position) of that element
+    in the array.
+    4. No Match: If no match is found after iterating through the entire array, it
+    returns -1 to indicate that the value was not found.
 
-Let's illustrate this with an example:
-Suppose we have an array of motor IDs: {1, 2, 3, 4, 5}.
-We want to find the position of motor ID 4 within this array.
+    Let's illustrate this with an example:
+    Suppose we have an array of motor IDs: {1, 2, 3, 4, 5}.
+    We want to find the position of motor ID 4 within this array.
 
-1. Loop: The function iterates through each element of the array.
-2. Comparison: It compares each element with the target value (4).
-   - Index 0: Element is 1, not a match.
-   - Index 1: Element is 2, not a match.
-   - Index 2: Element is 3, not a match.
-   - Index 3: Element is 4, match found.
-3. Match: It returns the index 3, indicating that motor ID 4 is found at
-position 3 in the array.
+    1. Loop: The function iterates through each element of the array.
+    2. Comparison: It compares each element with the target value (4).
+      - Index 0: Element is 1, not a match.
+      - Index 1: Element is 2, not a match.
+      - Index 2: Element is 3, not a match.
+      - Index 3: Element is 4, match found.
+    3. Match: It returns the index 3, indicating that motor ID 4 is found at
+    position 3 in the array.
 
-If the target value is not present in the array, the function returns -1. For
-example, if we search for motor ID 6 in the same array, the function would
-return -1, indicating that the value was not found.
+    If the target value is not present in the array, the function returns -1. For
+    example, if we search for motor ID 6 in the same array, the function would
+    return -1, indicating that the value was not found.
 
-This function is useful for tasks that involve searching for specific elements
-within arrays, such as locating motor IDs, sensor values, or any other data
-stored in array format.
-*/
+    This function is useful for tasks that involve searching for specific elements
+    within arrays, such as locating motor IDs, sensor values, or any other data
+    stored in array format.
+    */
 
   for (int i = 0; i < size; ++i) {
     if (array[i] == value) {
@@ -382,10 +396,47 @@ in emergency situations to prevent any further movement or potential harm.
   while (count < numMotors) {
     // Send command to set speed to 0 for each motor
     HoverSend(oSerialHover, motorIds[count], 0, slaveDesiredState[count]);
-    slaveDesiredSpeed[count] = 0;
-    slaveCurrentSpeed[count] = 0;
+    slaveDesiredSpeed[count]=0;
+    slaveSendSpeed[count]=0;
     count++;
   }
+  
+}
+void updateArrays(const SerialHover2Server& oHoverFeedback) {
+    // Find the position of iSlave in the motorIds array
+    int slavePosition = findPosition(motorIds, numMotors, oHoverFeedback.iSlave);
+    
+    // If the iSlave is found in the motorIds array
+    if (slavePosition != -1) {
+
+        // Update the arrays with the data from oHoverFeedback
+        slaveCurrentSpeed[slavePosition] = (oHoverFeedback.iSpeed * 10);
+        slaveCurrentAmp[slavePosition] = oHoverFeedback.iAmp;
+        slaveCurrentVolt[slavePosition] = oHoverFeedback.iVolt;
+        
+        #ifdef debug_updateArrays
+        Serial.print("Slave position ");
+        Serial.println(slavePosition);
+        // Print debug information
+        Serial.print("Updated data for iSlave ");
+        Serial.println(oHoverFeedback.iSlave);
+        Serial.print("Current Speed: ");
+        Serial.print(oHoverFeedback.iSpeed);
+        Serial.print(" array output after update ");
+        Serial.println(slaveCurrentSpeed[slavePosition]);
+        Serial.print("Current Amp: ");
+        Serial.print(oHoverFeedback.iAmp);
+        Serial.print(" array output after update ");
+        Serial.println(slaveCurrentAmp[slavePosition]);
+        Serial.print("Current Volt: ");
+        Serial.print(oHoverFeedback.iVolt);
+        Serial.print(" array output after update ");
+        Serial.println(slaveCurrentVolt[slavePosition]);
+        #endif
+    } else {
+        // If iSlave is not found in the motorIds array
+        Serial.println("Error: iSlave not found in motorIds array");
+    }
 }
 
 // input functions
@@ -417,7 +468,7 @@ void serialInput(String command) {
         Serial.println("Invalid command format");
       }
     } else if (command.startsWith("left|")) {
-      // Handle left motors
+// Handle left motors
       command.remove(0, 5);
       int speed, state;
       // Parse speed and state from the command
@@ -430,7 +481,7 @@ void serialInput(String command) {
         Serial.println("Invalid command format");
       }
     } else if (command.startsWith("right|")) {
-      // Handle right motors
+// Handle right motors
       command.remove(0, 6);
       int speed, state;
       // Parse speed and state from the command
@@ -464,3 +515,51 @@ void serialInput(String command) {
     Serial.println("Invalid command");
   }
 }
+
+// Function to read input from ADC (potentiometers) and set desired speed for motors
+#ifdef input_adc
+void ADCInput() {
+    //Description
+      /*  
+        This function reads the analog input from both the right and left potentiometers, maps the input values to the 
+        desired speed range (specified by minSpeed and maxSpeed), applies a deadband to eliminate small variations around 
+        the center position, and then sets the desired speed for the right and left motors accordingly using the 
+        setDesiredMotorSpeed function.
+      */
+    // Read analog input from right potentiometer
+    int rightPotValue = analogRead(adc_input_pin_right);
+    
+    // Read analog input from left potentiometer
+    int leftPotValue = analogRead(adc_input_pin_left);
+    
+    // Convert analog input values to desired speed within the specified range
+    int desiredSpeedRight = map(rightPotValue, 0, 4095, minSpeed, maxSpeed);
+    int desiredSpeedLeft = map(leftPotValue, 0, 4095, minSpeed, maxSpeed);
+    
+    // Apply deadband
+    if (abs(desiredSpeedRight) < adc_deadband) {
+        desiredSpeedRight = 0;
+    }
+    if (abs(desiredSpeedLeft) < adc_deadband) {
+        desiredSpeedLeft = 0;
+    }
+    
+    // Set desired speed for right motors
+    setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, desiredSpeedRight, "right");
+    
+    // Set desired speed for left motors
+    setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, desiredSpeedLeft, "left");
+
+#ifdef debug_adcinput
+    // Debugging steps
+    Serial.print("Right Potentiometer Value: ");
+    Serial.println(rightPotValue);
+    Serial.print("Left Potentiometer Value: ");
+    Serial.println(leftPotValue);
+    Serial.print("Desired Speed Right: ");
+    Serial.println(desiredSpeedRight);
+    Serial.print("Desired Speed Left: ");
+    Serial.println(desiredSpeedLeft);
+#endif
+}
+#endif
