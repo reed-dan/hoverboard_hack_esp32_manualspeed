@@ -33,11 +33,11 @@
 
 // Variable Declarations
 //settings
-const size_t numMotors = 1;      // Number of motors/slaves connected
+const size_t numMotors = 2;      // Number of motors/slaves connected
 const size_t numRightMotors = 1; // Number of right motors/slaves connected
 const size_t numLeftMotors = 1;  // Number of left motors/slaves connected
-int motorIds[numMotors] = {1};   // Motor IDs
-int motorIdsRight[numRightMotors] = {1}; // Motor IDs for right motors
+int motorIds[numMotors] = {0,1};   // Motor IDs
+int motorIdsRight[numRightMotors] = {0}; // Motor IDs for right motors
 int motorIdsLeft[numLeftMotors] = {1};   // Motor IDs for left motors
 const size_t speedIncrement = 10; // Increment speed for gradual acceleration
 int minSpeed = -1000; //the min speed that is avialable
