@@ -1,4 +1,17 @@
-// must be before include (ask how I knwo!)
+// Control Method
+#define input_serial //input commands via serial terminal
+//#define input_adc //input commands via potentialometers
+  #ifdef input_adc
+      //set both pins the same if you only have 1 adc
+    int adc_input_pin_right = 36; //analog input pin for the right potentiometer
+    int adc_input_pin_left = 37; //analog input pin for the left potentiometer
+    int adc_deadband = 100; //this the the range in the middle that will output zero
+  #endif
+#define wifi_control
+ 
+
+
+// must be before include (ask how I know!)
 #define REMOTE_UARTBUS
 #define _DEBUG // debug output to first hardware serial port
 //#define DEBUG_RX
@@ -6,7 +19,17 @@
 // Includes
 #include "util.h"
 #include "hoverserial.h"
+#ifdef wifi_control
+	#include <WiFi.h>
+	#include <WebServer.h>
+	#include <WiFiManager.h> // Include WiFiManager library
+  #include <ArduinoJson.h>
+#endif
 
+  #ifdef wifi_control
+	WebServer server(80);
+	WiFiManager wifiManager;
+  #endif 
 
 // Variable Declarations
 //settings
@@ -16,10 +39,13 @@ const size_t numLeftMotors = 1;  // Number of left motors/slaves connected
 int motorIds[numMotors] = {1};   // Motor IDs
 int motorIdsRight[numRightMotors] = {1}; // Motor IDs for right motors
 int motorIdsLeft[numLeftMotors] = {1};   // Motor IDs for left motors
-const size_t speedIncrement = 1; // Increment speed for gradual acceleration
+const size_t speedIncrement = 10; // Increment speed for gradual acceleration
 int minSpeed = -1000; //the min speed that is avialable
 int maxSpeed = 1000; //The max speed that is avialable
 int minStartSpeed = 300; //the minimum speed the motor needs to spin (otherwise we always read current speed 0 and never get anywhere)
+int wifiControlIncrement = 100; //the increase or decrease in speed when pressing forward or backwards
+int wifiControlTurn = 50; //the amount the motors on the direction you want to turn will be decreased
+
 
 //don't change these
 int slaveCurrentSpeed[numMotors] = {0}; // Current speeds of motors (initialized to 0)
@@ -31,6 +57,7 @@ int slaveCurrentVolt[numMotors] = {0};      // Current volts of slaves
 int slaveCurrentAmp[numMotors] = {0};       // Current amps of slaves
 int slaveCurrentOdometer[numMotors] = {0}; // Current hall steps of motors
 int count = 0;
+int speed;
 //int sendSpeed = 0; // The speed sent to the slave/motor, typically equals desiredSpeed unless desired != current
 
 
@@ -50,15 +77,7 @@ int count = 0;
 #define oSerialHover Serial2 // ESP32 Serial object for communication with hover
   SerialHover2Server oHoverFeedback;
 
-// Control Method
-#define input_serial //input commands via serial terminal
-//#define input_adc //input commands via potentialometers
-  #ifdef input_adc
-      //set both pins the same if you only have 1 adc
-    int adc_input_pin_right = 36; //analog input pin for the right potentiometer
-    int adc_input_pin_left = 37; //analog input pin for the left potentiometer
-    int adc_deadband = 100; //this the the range in the middle that will output zero
-  #endif
+
 
 
 
@@ -70,6 +89,24 @@ void setup() {
   SerialHover2Server oHoverFeedback;
   HoverSetupEsp32(oSerialHover, serialHoverBaud, serialHoverRxPin,
                   serialHoverTxPin);
+#ifdef wifi_control
+  // Set up WiFi network in AP mode by default
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP32AP");
+
+  // Print IP address
+  Serial.println("Connected to WiFi");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.softAPIP()); // Print AP IP address
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/settings", HTTP_GET, handleSettings);
+  server.on("/mode", HTTP_POST, handleMode);
+  server.on("/control", HTTP_POST, handleControl); // Endpoint for receiving control commands
+
+  server.begin();
+#endif
+
 }
 
 void loop() {
@@ -124,6 +161,9 @@ ADCInput();
     }
     // Repeat the process for other commands...
   }
+#ifdef wifi_control
+  server.handleClient();
+#endif
 }
 
 // wait for a repsonse to sent command
@@ -562,4 +602,225 @@ void ADCInput() {
     Serial.println(desiredSpeedLeft);
 #endif
 }
+#endif
+
+//wifi and webserver
+#ifdef wifi_control
+	void handleRoot() {
+	  String page = "<html><head><title>ESP32 Control</title></head><body>"
+					"<h1>ESP32 Control</h1>"
+					"<div onclick='sendCommand(\"forward\")' style='cursor: pointer; padding: 10px; background-color: #4CAF50; color: white; margin-bottom: 10px;'>Forward</div>"
+					"<div onclick='sendCommand(\"backward\")' style='cursor: pointer; padding: 10px; background-color: #2196F3; color: white; margin-bottom: 10px;'>Backward</div>"
+					"<div onclick='sendCommand(\"right\")' style='cursor: pointer; padding: 10px; background-color: #f44336; color: white; margin-bottom: 10px;'>Right</div>"
+					"<div onclick='sendCommand(\"left\")' style='cursor: pointer; padding: 10px; background-color: #FFA500; color: white; margin-bottom: 10px;'>Left</div>"
+					"<div onclick='sendCommand(\"sync\")' style='cursor: pointer; padding: 10px; background-color: #808080; color: white; margin-bottom: 10px;'>Sync</div>"
+					"<div onclick='sendCommand(\"stop\")' style='cursor: pointer; padding: 10px; background-color: #FF0000; color: white;'>Stop</div>"
+					"<br>"
+					"<a href='/settings'>Settings</a>"
+					"<script>"
+					"function sendCommand(command) {"
+					"  fetch('/control', {"
+					"    method: 'POST',"
+					"    headers: { 'Content-Type': 'application/json' },"
+					"    body: JSON.stringify({ command: command })"
+					"  });"
+					"}"
+					"</script>"
+					"</body></html>";
+
+	  server.send(200, "text/html", page);
+	}
+
+	void handleSettings() {
+	  String page = "<html><head><title>ESP32 Settings</title></head><body>"
+					"<h1>ESP32 Settings</h1>"
+					"<p>WiFi Mode: ";
+	  page += (WiFi.getMode() == WIFI_AP ? "Access Point (AP)" : "Station (STA)");
+	  page += "</p><p>IP Address: ";
+	  page += (WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString());
+	  page += "</p><div onclick='switchMode(\"ap\")' style='cursor: pointer; padding: 10px; background-color: #4CAF50; color: white; margin-bottom: 10px;'>Switch to AP mode</div>"
+			  "<div onclick='switchMode(\"config\")' style='cursor: pointer; padding: 10px; background-color: #2196F3; color: white; margin-bottom: 10px;'>WiFi Manager Config</div>"
+			  "<div onclick='switchMode(\"sta\")' style='cursor: pointer; padding: 10px; background-color: #f44336; color: white;'>Switch to STA mode</div>"
+			  "<a href='/'>Control</a>"
+			  "<script>"
+			  "function switchMode(mode) {"
+			  "  fetch('/mode', {"
+			  "    method: 'POST',"
+			  "    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },"
+			  "    body: 'mode=' + mode"
+			  "  }).then(() => location.reload());"
+			  "}"
+			  "</script>"
+			  "</body></html>";
+
+	  server.send(200, "text/html", page);
+	}
+
+	void handleMode() {
+	  String mode = server.arg("mode");
+	  server.stop(); // Stop the web server before switching modes
+	  if (mode == "ap") {
+		WiFi.disconnect(true); // Disconnect from current network before switching to AP mode
+		WiFi.mode(WIFI_AP);
+		delay(1000); // Delay to ensure WiFi mode change
+		wifiManager.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+		server.begin(); // Restart the web server after configuring the Access Point
+	  } else if (mode == "sta") {
+		WiFi.disconnect(true); // Disconnect from current network before switching to STA mode
+		WiFi.mode(WIFI_STA);
+		delay(1000); // Delay to ensure WiFi mode change
+		if (!wifiManager.autoConnect("ESP32AP")) {
+		  Serial.println("Failed to connect and hit timeout");
+		  // Handle failure to connect to WiFi
+		  // For example, retry connection or switch back to AP mode
+		}
+		server.begin(); // Restart the web server after configuring Station mode
+	  } else if (mode == "config") {
+		WiFi.disconnect(true); // Disconnect from current network before switching to AP mode
+		// WiFi.mode(WIFI_AP);
+		delay(1000); // Delay to ensure WiFi mode change
+		WiFiManager wm;
+
+		//reset settings - for testing
+		//wm.resetSettings();
+
+		// set configportal timeout
+		wm.setConfigPortalTimeout(120);
+
+		if (!wm.startConfigPortal("OnDemandAP")) {
+		  Serial.println("failed to connect and hit timeout");
+		  delay(3000);
+		  //reset and try again, or maybe put it to deep sleep
+		  ESP.restart();
+		  delay(5000);
+		}
+
+		//if you get here you have connected to the WiFi
+		Serial.println("connected...yeey :)");
+	  }
+	  handleSettings();
+	}
+
+	void handleControl() {
+		 // Handle control commands sent from the web page
+  if (server.hasArg("plain")) {
+    String jsonCommand = server.arg("plain");
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, jsonCommand);
+    if (error) {
+      Serial.print("Failed to parse JSON: ");
+      Serial.println(error.c_str());
+      server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+      return;
+    }
+    const char* command = doc["command"];
+
+    // Process the command here
+    if (strcmp(command, "forward") == 0) {
+      // Perform action for forward command
+      Serial.println("Moving forward...");
+	  			Serial.println("forward process started");
+					//sync the motors/slaves
+					speed = slaveDesiredSpeed[0];//retrieve the speed of the first motor
+					setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all"); //set all of the motors to said speed
+					//increment speed			
+					speed = speed + wifiControlIncrement;
+					//check is speed is less than max
+					if (speed < maxSpeed ){
+					//increase the speed by the increment
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all");
+					}
+					else if (speed >= maxSpeed)	{
+											if (speed < maxSpeed ){
+					//send maxspeed
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, maxSpeed,
+                             "all");
+					}
+					}
+    } else if (strcmp(command, "backward") == 0) {
+      // Perform action for backward command
+      Serial.println("Moving backward...");
+	  //sync the motors/slaves
+					speed = slaveDesiredSpeed[0];//retrieve the speed of the first motor
+					setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all"); //set all of the motors to said speed
+					//decrement speed			
+					speed = speed - wifiControlIncrement;
+					//check is speed is less than max
+					if (speed < minSpeed ){
+					//decrease the speed by the decrement
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all");
+					}
+					else if (speed <= minSpeed)	{
+											if (speed < maxSpeed ){
+					//send minspeed
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, minSpeed,
+                             "all");
+					}
+					}
+    } else if (strcmp(command, "right") == 0) {
+      // Perform action for right command
+      Serial.println("Turning right...");
+	  //sync the motors/slaves
+					speed = slaveDesiredSpeed[0];//retrieve the speed of the first motor
+					Serial.println(speed);
+					setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all"); //set all of the motors to said speed
+					//decrement speed by wifiControlTurn			
+					speed = speed - wifiControlTurn;
+										Serial.print("new speed right ");
+					Serial.println(speed);
+					//send decremented speed to right side
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "right");							 
+//note for self ifgure out how to handle turns in reverse and turns at max min speed
+		
+    } else if (strcmp(command, "left") == 0) {
+      // Perform action for left command
+      Serial.println("Turning left...");
+	  //sync the motors/slaves
+					speed = slaveDesiredSpeed[0];//retrieve the speed of the first motor
+					Serial.println(speed);
+					setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all"); //set all of the motors to said speed
+					//decrement speed by wifiControlTurn			
+					speed = speed - wifiControlTurn;
+					Serial.print("new speed left ");
+					Serial.println(speed);
+					//send decremented speed to left side
+			        setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "left");							 
+//note for self ifgure out how to handle turns in reverse and turns at max min speed
+		
+    } else if (strcmp(command, "sync") == 0) {
+      // Perform action for sync command
+      Serial.println("Syncing...");
+	  //sync the motors/slaves
+					speed = slaveDesiredSpeed[0];//retrieve the speed of the first motor
+					setDesiredMotorSpeed(motorIds, slaveDesiredSpeed, numMotors, speed,
+                             "all"); //set all of the motors to said speed
+
+    } else if (strcmp(command, "stop") == 0) {
+      // Perform action for stop command
+      Serial.println("Stopping...");
+	  emergencyStop();
+    } else {
+      // Unknown command
+      Serial.println("Unknown command");
+    }
+
+    // Send response back to client
+    server.send(200, "application/json", "{\"status\":\"OK\",\"command\":\"" + String(command) + "\"}");
+  } else {
+    // No command received
+    Serial.println("No command received.");
+    server.send(400, "application/json", "{\"error\":\"No command received\"}");
+  }
+		
+	  }
+
+
 #endif
